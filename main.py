@@ -3,31 +3,101 @@ import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
 
+import requests
+
 def obtener_tles(url):
     """
-    Función para obtener TLEs de Celestrak o Space-Track.
+    Función para obtener TLEs de Celestrak o Space-Track y organizarlos en un diccionario con información detallada.
     :param url: URL para obtener los TLEs.
-    :return: Lista de TLEs.
+    :return: Diccionario de TLEs detallado.
     """
     response = requests.get(url)
+    
     if response.status_code == 200:
-        tles = response.text.splitlines()  
-        return tles
+        tles_raw = response.text.splitlines()  # Los TLEs están en líneas separadas
+        tles_dict = {}
+
+        # Verificar si el número de líneas es múltiplo de 3 (cada satélite tiene 3 líneas)
+        if len(tles_raw) % 3 != 0:
+            print(f"Advertencia: El número de líneas de TLE no es múltiplo de 3. Hay {len(tles_raw)} líneas.")
+
+        
+
+        
+        for i in range(0, len(tles_raw), 3):  # Cada satélite tiene 3 líneas
+            name = tles_raw[i]  # Nombre del satélite o designador internacional
+            tle1 = tles_raw[i+1]  # Primera línea del TLE
+            tle2 = tles_raw[i+2]  # Segunda línea del TLE
+
+            # Asegurarse de que las líneas sean válidas
+            if len(tle1) < 68 or len(tle2) < 68:
+                print(f"Advertencia: Línea TLE incompleta en la entrada {i} para {name}.")
+                continue
+            
+            # Verificar el nombre
+            print(f"Procesando TLE para {name}")
+
+            # Informacion de la linea 1 del TLE
+            try:
+                number = tle1[2:7].strip()  # Número de catálogo NORAD (en la primera línea del TLE)
+                classification = tle1[7]
+                international_designator = tle1[9:17].strip()  # Designador internacional (en la primera línea del TLE)
+                epoch_time = tle1[18:32]  # Extracción del tiempo de época (en el rango de caracteres de la primera línea)
+                checksum1 = tle1[68]  # Dígito de control de la primera línea del TLE
+            except IndexError as e:
+                print(f"Error en el procesamiento del TLE: {e}")
+                continue
+
+            # Informacion de la linea 2 del TLE
+            inclination = tle2[8:16].strip()  # Inclinación (en grados)
+            right_ascension = tle2[17:25].strip()  # Ascensión recta del nodo ascendente (en grados)
+            eccentricity = tle2[26:33].strip()  # Excentricidad
+            eccentricity = "0." + eccentricity  # Convertir a formato decimal
+            argument_perigee = tle2[34:42].strip()  # Argumento del perigeo (en grados)
+            mean_anomaly = tle2[43:51].strip()  # Anomalía media (en grados)
+            mean_motion = tle2[52:63].strip()  # Movimiento medio (en revoluciones por día)
+            revolutions = tle2[63:68].strip()  # Número de revoluciones (en la segunda línea del TLE)
+            chesum2 = tle2[68]  # Dígito de control de la segunda línea del TLE
+            
+            
+            # Guardamos los datos en el diccionario usando el número NORAD como clave
+            tles_dict[name] = {
+                "International Designator": international_designator,
+                "NORAD Catalog Number": number,
+                "Classification": classification,
+                "Epoch Time": epoch_time,
+                "Checksum Line 1": checksum1,
+                "Inclination (degrees)": inclination,
+                "Right Ascension (degrees)": right_ascension,
+                "Eccentricity": eccentricity,
+                "Argument of Perigee (degrees)": argument_perigee,
+                "Mean Anomaly (degrees)": mean_anomaly,
+                "Mean Motion (rev/day)": mean_motion,
+                "Revolutions": revolutions,
+                "Checksum Line 2": chesum2
+            }
+        
+        return tles_dict
     else:
         print(f"Error al obtener TLEs: {response.status_code}")
-        return []
+        return {}
 
 # URL de Last 30 Days' Launches de Celestrak para obtener TLEs de satélites
 url = "https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle"
 tles = obtener_tles(url)
 
-# Muestra los primeros 3 TLEs como ejemplo (nombre, línea 1, línea 2)
-if len(tles) >= 3:
-    print(tles[:3])
+primeros_dos = list(tles.items())[:2]
+print(dict(primeros_dos))
 
 # Guardar TLEs en CSV (como texto plano)
-df = pd.DataFrame(tles, columns=["TLE"])
-df.to_csv('tles.csv', index=False)
+def guardar_tles_en_csv(tles, filename):
+    """
+    Guarda los TLEs en un archivo CSV.
+    :param tles: Lista de TLEs.
+    :param filename: Nombre del archivo CSV.
+    """
+    df = pd.DataFrame(tles, columns=["TLE"])
+    df.to_csv(filename, index=False)
 
 def calcular_orbita(tle1, tle2, nombre):
     """
@@ -62,10 +132,6 @@ if satelites:
 else:
     print("No se encontraron TLEs válidos.")
 
-
-
-from skyfield.api import load, Topos
-import datetime
 
 # Función para obtener TLEs (simulada para el ejemplo, deberías reemplazarla por la función real)
 def obtener_tles_de_norad(norad_id):
