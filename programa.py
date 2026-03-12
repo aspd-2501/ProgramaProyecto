@@ -126,9 +126,14 @@ def calcular_orbita(tle1, tle2, nombre):
 
 # Función para calcular las ventanas de visibilidad
 def calcular_ventanas_visibilidad(tle: dict, ubicacion, grados_horizonte=10):
-    satellite = EarthSatellite(tle1, 'SAT_NAME', load.timescale())
+    for norad_id, tle_info in tle.items():
+        tle1 = tle_info["TLE Line 1"]
+        tle2 = tle_info["TLE Line 2"]
+    
+    satellite = EarthSatellite(tle1, tle2, 'SAT_NAME', load.timescale())
     ts = load.timescale()
     tiempo_actual = ts.now()
+
     
     # Ubicación del objetivo (latitud y longitud)
     objetivo = wgs84.latlon(ubicacion[0], ubicacion[1])

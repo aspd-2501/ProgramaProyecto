@@ -14,6 +14,10 @@ def main():
     print("=== Sistema de búsqueda por norad ID ===")
     while True:
         norad_id = input("\nIngrese el norad ID (o 'salir' para terminar): ").strip().upper()
+        grados_horizonte = float(input("Ingrese los grados sobre el horizonte: "))
+        fecha_objetivo = input("Ingrese la fecha objetivo (YYYY-MM-DD): ").strip()
+        ubicacion = input("Ingrese la ubicación del objetivo (latitud, longitud): ").strip()
+        ubicacion = tuple(map(float, ubicacion.split(',')))  # Convertir a tupla de floats
 
         
         if norad_id == "SALIR":
