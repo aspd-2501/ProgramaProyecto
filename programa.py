@@ -3,9 +3,9 @@ import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
 
-import requests
+# Programa principal
 
-# DONE
+
 def obtener_tles(norad_ids: list[str]) -> dict:
     """
     Obtiene TLEs de Celestrak para una lista de NORAD IDs específicos.
@@ -86,24 +86,117 @@ tles = obtener_tles(norad_ids)
 print(tles)
 
 
+# 1. Calcular ventana de contacto 
 
-
-
-
-
-
-
-
-
-# Guardar TLEs en CSV (como texto plano)
-def guardar_tles_en_csv(tles, filename):
+def calcular_ventana_contacto(norad_ids: list[str], ubicacion: tuple, grados_horizonte: float, deadline: str):
     """
-    Guarda los TLEs en un archivo CSV.
-    :param tles: Lista de TLEs.
-    :param filename: Nombre del archivo CSV.
+    Calcula las ventanas de contacto para una lista de satélites.
+
+    :param norad_ids: Lista de NORAD IDs.
+    :param ubicacion: Tupla (latitud, longitud) del punto de contacto.
+    :param grados_horizonte: Elevación mínima sobre el horizonte (grados).
+    :param deadline: Fecha límite en formato 'YYYY-MM-DD'.
+    :return: Diccionario con resultados por satélite.
     """
-    df = pd.DataFrame(tles, columns=["TLE"])
-    df.to_csv(filename, index=False)
+    # Parsear el deadline
+    try:
+        fecha_deadline = datetime.datetime.strptime(deadline, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc
+        )
+    except ValueError:
+        return {"error": f"Formato de fecha inválido: '{deadline}'. Use YYYY-MM-DD."}
+
+    # Obtener TLEs
+    tles = obtener_tles(norad_ids)
+    if not tles:
+        return {"error": "No se pudieron obtener TLEs para los NORAD IDs proporcionados."}
+
+    ts = load.timescale()
+    estacion = wgs84.latlon(ubicacion[0], ubicacion[1])
+
+    # Ventana de búsqueda: desde ahora hasta el deadline (máx. 7 días)
+    ahora = datetime.datetime.now(datetime.timezone.utc)
+    if fecha_deadline <= ahora:
+        return {"error": "El deadline ya pasó. Ingrese una fecha futura."}
+
+    delta_dias = (fecha_deadline - ahora).total_seconds() / 86400
+    delta_dias = min(delta_dias, 7.0)  # Skyfield recomienda máx ~7 días por precisión
+
+    t0 = ts.from_datetime(ahora)
+    t1 = ts.from_datetime(ahora + datetime.timedelta(days=delta_dias))
+
+    resultados = {}
+
+    for norad_id, tle_info in tles.items():
+        nombre = tle_info["NAME"]
+        tle1   = tle_info["TLE Line 1"]
+        tle2   = tle_info["TLE Line 2"]
+
+        satellite = EarthSatellite(tle1, tle2, nombre, ts)
+
+        # find_events devuelve los eventos de elevación:
+        # tipo 0 = AOS (rise), tipo 1 = culminación, tipo 2 = LOS (set)
+        try:
+            tiempos, eventos = satellite.find_events(
+                estacion, t0, t1, altitude_degrees=grados_horizonte
+            )
+        except Exception as e:
+            resultados[norad_id] = {"nombre": nombre, "error": str(e)}
+            continue
+
+        # Agrupar en ventanas AOS → LOS
+        ventanas = []
+        aos = None
+        max_elev = 0.0
+        max_elev_time = None
+
+        for t, evento in zip(tiempos, eventos):
+            dt = t.utc_datetime()
+            diferencia = satellite - estacion
+            topocentric = diferencia.at(t)
+            alt, az, distancia = topocentric.altaz()
+
+            if evento == 0:  # AOS
+                aos = dt
+                max_elev = alt.degrees
+                max_elev_time = dt
+
+            elif evento == 1:  # Culminación (elevación máxima)
+                max_elev = alt.degrees
+                max_elev_time = dt
+
+            elif evento == 2 and aos is not None:  # LOS
+                los = dt
+                duracion_seg = (los - aos).total_seconds()
+                ventanas.append({
+                    "AOS (UTC)":             aos.strftime("%Y-%m-%d %H:%M:%S"),
+                    "LOS (UTC)":             los.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Duración (seg)":        round(duracion_seg),
+                    "Elevación máx (°)":     round(max_elev, 2),
+                    "Hora elevación máx":    max_elev_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Antes del deadline":    los <= fecha_deadline,
+                })
+                aos = None
+
+        factible = any(v["Antes del deadline"] for v in ventanas)
+
+        resultados[norad_id] = {
+            "nombre":         nombre,
+            "ventanas":       ventanas,
+            "total_ventanas": len(ventanas),
+            "factible":       factible,
+        }
+
+    return resultados
+
+# 2. Verificar la ventana de contacto sea antes del deadline
+
+
+
+
+
+
+
 
 def calcular_orbita(tle1, tle2, nombre):
     """
@@ -184,13 +277,6 @@ def calcular_ventanas_contacto(tle1: dict, estacion_terrestre, grados_horizonte=
         print(f"Error en calcular_ventanas_contacto: {e}")
         return True  # Retornar True por defecto si hay error
 
-# Ejemplo de uso con TLEs y estación terrestre
-tle1 = obtener_tles("25544")  # Obtener TLEs para el ejemplo
-estacion_terrestre = (0, 0)  # Coordenadas de la estación terrestre (latitud, longitud)
-
-ventanas_contacto = calcular_ventanas_contacto(tle1, estacion_terrestre)
-print("Contacto con estación terrestre:", "Sí" if ventanas_contacto else "No")
-
 # Función principal para validar la misión
 def validar_mision(norad_id, fecha_objetivo, ubicacion, grados_horizonte):
     """
@@ -216,15 +302,6 @@ def validar_mision(norad_id, fecha_objetivo, ubicacion, grados_horizonte):
     
     # Si ambas ventanas están disponibles, la misión es factible
     return "Misión factible."
-
-# Ejemplo de uso de la función
-norad_id = "25544"  # NORAD ID de un satélite
-fecha_objetivo = "2023-06-01"  # Fecha de la misión
-ubicacion = (0, 0)  # Coordenadas del objetivo (latitud, longitud)
-grados_horizonte = 10  # Grados sobre el horizonte
-
-resultado = validar_mision(norad_id, fecha_objetivo, ubicacion, grados_horizonte)
-print(resultado)
 
 
 
