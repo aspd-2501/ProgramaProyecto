@@ -99,13 +99,14 @@ def calculate_contact_window(norad_ids: list[str], ubicacion: tuple, grados_hori
     :param deadline: Fecha límite en formato 'YYYY-MM-DD'.
     :return: Diccionario con resultados por satélite.
     """
+    
     # Parsear el deadline
     try:
-        fecha_deadline = datetime.datetime.strptime(deadline, "%Y-%m-%d").replace(
+        fecha_deadline = datetime.datetime.strptime(deadline, "%Y-%m-%d %H:%M:%S").replace(
             tzinfo=datetime.timezone.utc
         )
     except ValueError:
-        return {"error": f"Formato de fecha inválido: '{deadline}'. Use YYYY-MM-DD."}
+        return {"error": f"Formato de fecha inválido: '{deadline}'. Use YYYY-MM-DD HH:MM:SS."}
 
     # Obtener TLEs
     tles = get_tles(norad_ids)
