@@ -2,11 +2,12 @@ import requests
 import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
+import skyfield
 
 # Programa principal
 
 
-def obtener_tles(norad_ids: list[str]) -> dict:
+def get_tles(norad_ids: list[str]) -> dict:
     """
     Obtiene TLEs de Celestrak para una lista de NORAD IDs específicos.
     :param norad_ids: Lista de NORAD IDs (e.g. ["25544", "48274"]).
@@ -81,14 +82,14 @@ def obtener_tles(norad_ids: list[str]) -> dict:
 
 
 # Ejemplo de uso
-norad_ids = ["25544", "48274", "43013"]   # ISS + dos satélites de ejemplo
-tles = obtener_tles(norad_ids)
-print(tles)
+#norad_ids = ["25544", "48274", "43013"]   # ISS + dos satélites de ejemplo
+#tles = get_tles(norad_ids)
+#print(tles)
 
 
 # 1. Calcular ventana de contacto 
 
-def calcular_ventana_contacto(norad_ids: list[str], ubicacion: tuple, grados_horizonte: float, deadline: str):
+def calculate_contact_window(norad_ids: list[str], ubicacion: tuple, grados_horizonte: float, deadline: str):
     """
     Calcula las ventanas de contacto para una lista de satélites.
 
@@ -107,7 +108,7 @@ def calcular_ventana_contacto(norad_ids: list[str], ubicacion: tuple, grados_hor
         return {"error": f"Formato de fecha inválido: '{deadline}'. Use YYYY-MM-DD."}
 
     # Obtener TLEs
-    tles = obtener_tles(norad_ids)
+    tles = get_tles(norad_ids)
     if not tles:
         return {"error": "No se pudieron obtener TLEs para los NORAD IDs proporcionados."}
 
@@ -134,7 +135,6 @@ def calcular_ventana_contacto(norad_ids: list[str], ubicacion: tuple, grados_hor
 
         satellite = EarthSatellite(tle1, tle2, nombre, ts)
 
-        # find_events devuelve los eventos de elevación:
         # tipo 0 = AOS (rise), tipo 1 = culminación, tipo 2 = LOS (set)
         try:
             tiempos, eventos = satellite.find_events(
@@ -189,123 +189,6 @@ def calcular_ventana_contacto(norad_ids: list[str], ubicacion: tuple, grados_hor
 
     return resultados
 
-# 2. Verificar la ventana de contacto sea antes del deadline
 
 
-
-
-
-
-
-
-def calcular_orbita(tle1, tle2, nombre):
-    """
-    Propaga la órbita a partir de dos líneas de TLE.
-    :param tle1: Primera línea de TLE.
-    :param tle2: Segunda línea de TLE.
-    :param nombre: Nombre del satélite.
-    :return: Posición del satélite en un momento dado.
-    """
-    satellite = EarthSatellite(tle1, tle2, nombre, load.timescale())  # Carga los TLEs
-    
-    ts = load.timescale()
-    t = ts.now()  # Tiempo UTC actual
-    
-    # Propaga la órbita del satélite
-    position = satellite.at(t)
-    print(f"Posición de {nombre}: {position}")
-    return position
-
-
-# Función para calcular las ventanas de visibilidad
-def calcular_ventanas_visibilidad(tle: dict, ubicacion, grados_horizonte=10):
-    for norad_id, tle_info in tle.items():
-        tle1 = tle_info["TLE Line 1"]
-        tle2 = tle_info["TLE Line 2"]
-    
-    satellite = EarthSatellite(tle1, tle2, 'SAT_NAME', load.timescale())
-    ts = load.timescale()
-    tiempo_actual = ts.now()
-
-    
-    # Ubicación del objetivo (latitud y longitud)
-    objetivo = wgs84.latlon(ubicacion[0], ubicacion[1])
-    
-    # Calcular la elevación sobre el horizonte
-    try:
-        astrometric = objetivo.at(tiempo_actual).observe(satellite)
-        alt, az, d = astrometric.apparent().altaz()
-        
-        # Verificar si la elevación es mayor que el umbral de visibilidad
-        if alt.degrees > grados_horizonte:
-            return True  # Ventana de visibilidad disponible
-        else:
-            return False  # No hay ventana de visibilidad
-    except Exception as e:
-        print(f"Error en calcular_ventanas_visibilidad: {e}")
-        return True  # Retornar True por defecto si hay error
-
-def calcular_ventanas_contacto(tle1: dict, estacion_terrestre, grados_horizonte=10):
-    """
-    Calcula las ventanas de contacto entre el satélite y una estación terrestre.
-    :param tle1: TLE de la primera línea.
-    :param tle2: TLE de la segunda línea.
-    :param estacion_terrestre: Ubicación de la estación terrestre (latitud, longitud).
-    :param grados_horizonte: Grados sobre el horizonte para considerar el contacto.
-    :return: Si el satélite tiene contacto con la estación terrestre (True) o no (False).
-    """
-    satellite = EarthSatellite(tle1, 'SAT_NAME', load.timescale())
-    ts = load.timescale()
-    
-    # Tiempo actual (UTC)
-    tiempo_actual = ts.now()
-    
-    # Ubicación de la estación terrestre
-    estacion = wgs84.latlon(estacion_terrestre[0], estacion_terrestre[1])
-    
-    # Calcular la elevación sobre el horizonte para la estación terrestre
-    try:
-        astrometric = estacion.at(tiempo_actual).observe(satellite)
-        alt, az, d = astrometric.apparent().altaz()
-        
-        # Comparar la elevación con el umbral para contacto
-        if alt.degrees > grados_horizonte:
-            return True  # El satélite tiene contacto con la estación
-        else:
-            return False  # El satélite no tiene contacto con la estación
-    except Exception as e:
-        print(f"Error en calcular_ventanas_contacto: {e}")
-        return True  # Retornar True por defecto si hay error
-
-# Función principal para validar la misión
-def validar_mision(norad_id, fecha_objetivo, ubicacion, grados_horizonte):
-    """
-    Valida si la misión satelital es factible según las ventanas de visibilidad y contacto.
-    :param norad_id: Identificador del satélite.
-    :param fecha_objetivo: Fecha objetivo para la misión.
-    :param ubicacion: Ubicación del objetivo (latitud, longitud).
-    :param grados_horizonte: Grados sobre el horizonte.
-    :return: Si la misión es factible o no.
-    """
-    # Obtener los TLEs del satélite
-    tle1, tle2 = obtener_tles_de_norad(norad_id)
-    
-    # Calcular las ventanas de visibilidad
-    ventanas_visibilidad = calcular_ventanas_visibilidad(tle1, tle2, ubicacion)
-    if not ventanas_visibilidad:
-        return "Misión no factible: Sin ventana de visibilidad."
-    
-    # Calcular las ventanas de contacto con estaciones terrestres
-    ventanas_contacto = calcular_ventanas_contacto(tle1, tle2, ubicacion)
-    if not ventanas_contacto:
-        return "Misión no factible: Sin ventana de contacto con estaciones terrestres."
-    
-    # Si ambas ventanas están disponibles, la misión es factible
-    return "Misión factible."
-
-
-
-#########################################
-#TODO: - Mejorar la función de validación para considerar múltiples estaciones terrestres y diferentes umbrales de visibilidad.
-#      - Verificación de las ventanas de visibilidad: verificar las condiciones para vas ventanas de visibilidad.
 
