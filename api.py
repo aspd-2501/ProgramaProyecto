@@ -4,20 +4,22 @@ import datetime
 import re
 import programa
 
-app = FastAPI(title="Agente de Ventanas de Contacto")
+app = FastAPI(title="Agente de Contexto orbital")
 
 # ── Modelos de entrada/salida ────────────────────────────────────────────────
 
 class ContactRequest(BaseModel):
     norad_ids: list[str]
-    ubicacion: tuple[float, float]        # (latitud, longitud)
+    ubicacion: tuple[float, float]
     grados_horizonte: float
-    deadline: str                          # ISO 8601
+    deadline: str
+    usar_llm: bool = True
+    modelo_llm: str = "gemma2:9b"
 
     @field_validator("deadline")
     @classmethod
     def validar_deadline(cls, v):
-        parse_iso8601(v)                   # lanza ValueError si es inválido
+        parse_iso8601(v)
         return v
 
 # ── Reutilizas tu parser ISO 8601 ───────────────────────────────────────────
@@ -60,27 +62,26 @@ def health():
 
 @app.post("/ventanas")
 def calcular_ventanas(req: ContactRequest):
-    """
-    Recibe los parámetros y devuelve las ventanas de contacto en JSON.
-    """
     try:
         deadline_dt  = parse_iso8601(req.deadline)
         deadline_str = deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    resultados = programa.calculate_contact_window(
+    salida = programa.calculate_contact_window_with_explanation(
         req.norad_ids,
         req.ubicacion,
         req.grados_horizonte,
         deadline_str,
+        usar_llm=req.usar_llm,
+        model=req.modelo_llm,
     )
 
+    resultados = salida["resultados"]
     if "error" in resultados:
         raise HTTPException(status_code=400, detail=resultados["error"])
 
-    return resultados
-
+    return salida
 
 @app.get("/tle/{norad_id}")
 def obtener_tle(norad_id: str):

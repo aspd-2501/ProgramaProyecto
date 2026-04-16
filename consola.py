@@ -108,9 +108,7 @@ def main():
             except ValueError as e:
                 print(f"  ✘ {e}")
 
-        # Deadline como string UTC para calculate_contact_window
         deadline_str = deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
-
 
         raw_ubic = input("Ubicación del punto de contacto (latitud, longitud): ").strip()
 
@@ -121,8 +119,20 @@ def main():
             print("Formato de ubicación inválido. Use: lat,lon  (ej: 4.71,-74.07)")
             continue
 
-        resultados = programa.calculate_contact_window(norad_ids, ubicacion, grados_horizonte, deadline_str)
+        usar_llm = input("¿Generar explicación con Ollama? (s/n): ").strip().lower() == "s"
+
+        salida = programa.calculate_contact_window_with_explanation(
+            norad_ids, ubicacion, grados_horizonte, deadline_str, usar_llm=usar_llm
+        )
+
+        resultados = salida["resultados"]
         formatear_resultado(resultados)
+
+        if salida["explicacion"]:
+            print("\n" + "="*60)
+            print("EXPLICACIÓN EN LENGUAJE NATURAL")
+            print("="*60)
+            print(salida["explicacion"])
 
 
 if __name__ == "__main__":

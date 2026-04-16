@@ -3,6 +3,7 @@ import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
 import skyfield
+from explicator import explicar_factibilidad_con_ollama
 
 # Programa principal
 
@@ -191,5 +192,41 @@ def calculate_contact_window(norad_ids: list[str], ubicacion: tuple, grados_hori
     return resultados
 
 
+def calculate_contact_window_with_explanation(
+    norad_ids: list[str],
+    ubicacion: tuple,
+    grados_horizonte: float,
+    deadline: str,
+    usar_llm: bool = True,
+    model: str = "gemma2:9b",
+):
+    resultados = calculate_contact_window(
+        norad_ids=norad_ids,
+        ubicacion=ubicacion,
+        grados_horizonte=grados_horizonte,
+        deadline=deadline,
+    )
+
+    if not usar_llm:
+        return {
+            "resultados": resultados,
+            "explicacion": None,
+        }
+
+    try:
+        explicacion = explicar_factibilidad_con_ollama(
+            resultados=resultados,
+            ubicacion=ubicacion,
+            grados_horizonte=grados_horizonte,
+            deadline=deadline,
+            model=model,
+        )
+    except Exception as e:
+        explicacion = f"No se pudo generar la explicación con Ollama: {str(e)}"
+
+    return {
+        "resultados": resultados,
+        "explicacion": explicacion,
+    }
 
 
