@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
-import skyfield
 from explicator import explicar_factibilidad_con_ollama
 
 # Programa principal
@@ -18,7 +17,12 @@ def get_tles(norad_ids: list[str]) -> dict:
 
     for norad_id in norad_ids:
         url = f"https://celestrak.org/NORAD/elements/gp.php?CATNR={norad_id}&FORMAT=TLE"
-        response = requests.get(url)
+        try:
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Error al obtener TLE para NORAD ID {norad_id}: {e}")
+            continue
 
         if response.status_code != 200:
             print(f"Error al obtener TLE para NORAD ID {norad_id}: HTTP {response.status_code}")
@@ -191,6 +195,35 @@ def calculate_contact_window(norad_ids: list[str], ubicacion: tuple, grados_hori
 
     return resultados
 
+def construir_justificacion_base(resultados: dict) -> dict:
+    justificaciones = {}
+
+    for norad_id, info in resultados.items():
+        if "error" in info:
+            justificaciones[norad_id] = (
+                f"Se presentó un error al procesar el satélite: {info['error']}"
+            )
+            continue
+
+        ventanas = info.get("ventanas", [])
+        factible = info.get("factible", False)
+
+        if not ventanas:
+            justificaciones[norad_id] = (
+                "No se encontraron ventanas de contacto dentro del período evaluado."
+            )
+        elif factible:
+            justificaciones[norad_id] = (
+                "La misión es factible porque existe al menos una ventana de contacto "
+                "que ocurre antes del deadline establecido."
+            )
+        else:
+            justificaciones[norad_id] = (
+                "La misión no es factible porque, aunque se encontraron ventanas de contacto, "
+                "ninguna cumple la condición temporal definida frente al deadline."
+            )
+
+    return justificaciones
 
 def calculate_contact_window_with_explanation(
     norad_ids: list[str],
@@ -213,12 +246,15 @@ def calculate_contact_window_with_explanation(
             "explicacion": None,
         }
 
+    justificaciones_base = construir_justificacion_base(resultados)
+
     try:
         explicacion = explicar_factibilidad_con_ollama(
             resultados=resultados,
             ubicacion=ubicacion,
             grados_horizonte=grados_horizonte,
             deadline=deadline,
+            justificaciones_base=justificaciones_base,
             model=model,
         )
     except Exception as e:
@@ -227,6 +263,7 @@ def calculate_contact_window_with_explanation(
     return {
         "resultados": resultados,
         "explicacion": explicacion,
+        "justificaciones_base": justificaciones_base,
     }
 
 

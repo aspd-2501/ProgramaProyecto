@@ -3,6 +3,7 @@ from pydantic import BaseModel, field_validator
 import datetime
 import re
 import programa
+from utils import parse_iso8601
 
 app = FastAPI(title="Agente de Contexto orbital")
 
@@ -22,35 +23,8 @@ class ContactRequest(BaseModel):
         parse_iso8601(v)
         return v
 
-# ── Reutilizas tu parser ISO 8601 ───────────────────────────────────────────
 
-ISO_FULL = re.compile(
-    r"^(\d{4})-(\d{2})-(\d{2})"
-    r"(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?"
-    r"(Z|[+-]\d{2}:?\d{2})?$"
-)
 
-def parse_iso8601(dt_str: str) -> datetime.datetime:
-    m = ISO_FULL.match(dt_str.strip())
-    if not m:
-        raise ValueError(f"Formato no reconocido: '{dt_str}'. Use ISO 8601.")
-    anio, mes, dia = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    hora   = int(m.group(4)) if m.group(4) else 0
-    minuto = int(m.group(5)) if m.group(5) else 0
-    seg    = int(m.group(6)) if m.group(6) else 0
-    ms     = int(m.group(7).ljust(3, "0")) * 1000 if m.group(7) else 0
-    zona_str = m.group(8)
-    if zona_str is None or zona_str == "Z":
-        tzinfo = datetime.timezone.utc
-    else:
-        signo = 1 if zona_str[0] == "+" else -1
-        partes = zona_str[1:].replace(":", "")
-        offset_h, offset_m = int(partes[:2]), int(partes[2:])
-        tzinfo = datetime.timezone(
-            datetime.timedelta(hours=signo * offset_h, minutes=signo * offset_m)
-        )
-    dt = datetime.datetime(anio, mes, dia, hora, minuto, seg, ms, tzinfo=tzinfo)
-    return dt.astimezone(datetime.timezone.utc)
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
