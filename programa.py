@@ -3,6 +3,9 @@ import pandas as pd
 from skyfield.api import Topos, load, EarthSatellite, utc, wgs84
 import datetime
 from explicator import explicar_factibilidad_con_ollama
+from utils import parse_iso8601
+from adapter import adaptar_resultado
+from models import ContextoOrbital
 
 # Programa principal
 
@@ -106,12 +109,9 @@ def calculate_contact_window(norad_ids: list[str], ubicacion: tuple, grados_hori
     """
     
     # Parsear el deadline
-    try:
-        fecha_deadline = datetime.datetime.strptime(deadline, "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=datetime.timezone.utc
-        )
-    except ValueError:
-        return {"error": f"Formato de fecha inválido: '{deadline}'. Use YYYY-MM-DD HH:MM:SS."}
+    fecha_deadline = parse_iso8601(deadline)
+    if fecha_deadline is None:
+        return {"error": f"Formato de fecha inválido: '{deadline}'. Use ISO 8601."}
 
     # Obtener TLEs
     tles = get_tles(norad_ids)
@@ -225,14 +225,14 @@ def construir_justificacion_base(resultados: dict) -> dict:
 
     return justificaciones
 
-def calculate_contact_window_with_explanation(
-    norad_ids: list[str],
+def calculate_contact_window_with_explanation(norad_ids: list[str],
     ubicacion: tuple,
     grados_horizonte: float,
     deadline: str,
     usar_llm: bool = True,
     model: str = "gemma2:9b",
-):
+)-> ContextoOrbital:
+    
     resultados = calculate_contact_window(
         norad_ids=norad_ids,
         ubicacion=ubicacion,
@@ -241,10 +241,12 @@ def calculate_contact_window_with_explanation(
     )
 
     if not usar_llm:
-        return {
+        raw = {
             "resultados": resultados,
             "explicacion": None,
+            "justificaciones_base": construir_justificacion_base(resultados),
         }
+        return adaptar_resultado(raw, deadline, ubicacion, grados_horizonte)
 
     justificaciones_base = construir_justificacion_base(resultados)
 
@@ -260,10 +262,11 @@ def calculate_contact_window_with_explanation(
     except Exception as e:
         explicacion = f"No se pudo generar la explicación con Ollama: {str(e)}"
 
-    return {
+    raw = {
         "resultados": resultados,
         "explicacion": explicacion,
         "justificaciones_base": justificaciones_base,
     }
 
+    return adaptar_resultado(raw, deadline, ubicacion, grados_horizonte)
 
